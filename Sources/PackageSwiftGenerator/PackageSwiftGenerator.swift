@@ -1,10 +1,8 @@
 import Files
 import Foundation
 import PackageDescription
-import SwiftPrettyPrint
-
 import ProjectAutomation
-import XcodeProjKit
+import SwiftPrettyPrint
 
 typealias DTarget = PackageDescription.Target
 typealias DPackage = PackageDescription.Package
@@ -22,7 +20,7 @@ struct UnicodeLogger: TextOutputStream {
 
     import PackageDescription
 
-    let package =
+    let package = 
     """
     var logged: String = Self.header
     mutating func write(_ string: String) {
@@ -50,95 +48,7 @@ struct UnicodeLogger: TextOutputStream {
     }
 }
 
-private extension URL {
-    func fileURL(endsWith suffix: String) -> URL? {
-        let directory = isFileURL ? deletingLastPathComponent() : self
-        let fileURLs = try! fileManager.contentsOfDirectory(at: self, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
-        print("fileURLs: \(fileURLs)")
-        let fileURL = fileURLs.filter {
-            print("\($0.lastPathComponent)")
-            return $0.lastPathComponent.contains(suffix)
-        }
-        .filter { url in
-
-            if url.lastPathComponent.contains("Manifests.") {
-                return false
-            }
-
-            if url.lastPathComponent.contains("Plugin.") {
-                return false
-            }
-
-            return true
-
-        }.first
-        return fileURL
-    }
-
-    var xcodeprojURL: URL? {
-        fileURL(endsWith: ".xcodeproj")
-    }
-
-    var projectName: String? {
-        xcodeprojURL?.deletingPathExtension().lastPathComponent
-    }
-}
-
-func debugLog<T>(_ t: T) {
-    print(Mirror(reflecting: t).children.compactMap { "\($0.label ?? "Unknown Label"): \($0.value)" }.joined(separator: "\n"))
-}
-
-private extension URL {
-    var hasPackageDotSwift: Bool {
-        let packageDotSwift = appendingPathComponent("Package.swift")
-        return fileManager.fileExists(atPath: packageDotSwift.path)
-    }
-
-    var swiftPackageRootFolder: URL? {
-        if hasPackageDotSwift {
-            return self
-        } else if lastPathComponent.contains(spmBuildFolder) {
-            // no package.swift found
-            return nil
-        } else {
-            return deletingLastPathComponent().swiftPackageRootFolder
-        }
-    }
-}
-
-private extension String {
-    var swiftPackageRootFolder: URL? {
-        let url = URL(fileURLWithPath: self)
-        return url.swiftPackageRootFolder
-    }
-}
-
-extension String {
-    var processResource: Resource {
-        .process(self)
-    }
-}
-
-private extension ATarget {
-    var isSwiftPackage: Bool {
-        sources.first?.contains(spmCheckOutFolder) ?? false
-    }
-}
-
-private extension TargetDependency {
-    var dtDependency: DTarget.Dependency {
-        switch self {
-        case let .target(name):
-            return .target(name: name)
-        case let .project(name, path: _):
-            return .target(name: name)
-        default:
-            fatalError("not implemented: \(self)")
-        }
-    }
-}
-
-public struct XcodeprojToJson {
+public struct PackageSwiftGenerator {
     private let arguments: [String]
 
     public init(arguments: [String] = CommandLine.arguments) {
@@ -251,15 +161,14 @@ public struct XcodeprojToJson {
             return originalString
         }
 
-        SimpleDescriber.customObjectFilter = { target, debug, original, fields in
+        SimpleDescriber.customObjectFilter = { target, _, original, fields in
 
             if let platform = target as? SupportedPlatform {
                 return supportedPlatform
             }
 
             let fields: Fields = fields
-            if let resource = target as? Resource
-            {
+            if let resource = target as? Resource {
                 if let path = fields.compactMap { tuple in
                     if tuple.0 == "path" {
                         return tuple.1
@@ -267,9 +176,8 @@ public struct XcodeprojToJson {
                     return nil
                 }.first {
                     return """
-                            .process(\(path))
-                           """
-
+                     .process(\(path))
+                    """
                 }
             }
 
@@ -282,28 +190,18 @@ public struct XcodeprojToJson {
             return lines.joined(separator: "\n")
         }
 
-        SimpleDescriber.customValueFilter = { target, debug, original in
-            return original
+        SimpleDescriber.customValueFilter = { _, _, original in
+            original
         }
 
         Pretty.customizablePrettyPrint(package, to: &logger)
 
         print(logger.logged)
-
-//        print("These are the current project's targets: \(targets))")
-        // } catch {
-        // throw Error.failedToCreateFile
-        // }
-
-        // let url = URL(filePath: fileName)
-        // let xcodeProj = try XcodeProj(url: url)
-        // let newUrl = url.appendingPathExtension("json")
-        // try xcodeProj.write(to: newUrl, format: .json)
     }
 }
 
 @available(macOS 13.0, *)
-public extension XcodeprojToJson {
+public extension PackageSwiftGenerator {
     enum Error: Swift.Error {
         case missingFileName
         case failedToCreateFile
@@ -311,12 +209,14 @@ public extension XcodeprojToJson {
     }
 }
 
-let tool = XcodeprojToJson()
-
-do {
-    try tool.run()
-} catch {
-    print("Whoops! An error occurred: \(error)")
+@main
+enum Main {
+    static func main() {
+        do {
+            let tool = PackageSwiftGenerator()
+            try tool.run()
+        } catch {
+            print("Whoops! An error occurred: \(error)")
+        }
+    }
 }
-
-print(Package.self)
