@@ -1,5 +1,5 @@
-import XCTest
 @testable import XcodeprojToJson
+import XCTest
 
 final class XcodeprojToJsonTests: XCTestCase {
     func testExample() throws {

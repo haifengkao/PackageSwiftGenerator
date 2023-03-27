@@ -5,7 +5,16 @@ import PackageDescription
 
 let package = Package(
     name: "XcodeprojToJson",
+    platforms: [
+        .macOS("15.0"),
+    ],
     dependencies: [
+        .package(url: "https://github.com/tuist/ProjectAutomation", from: "3.0.0"),
+        .package(url: "https://github.com/phimage/XcodeProjKit.git", from: "3.0.0"),
+        .package(url: "https://github.com/JohnSundell/Files", from: "4.0.0"),
+        .package(url: "https://github.com/apple/swift-package-manager.git", branch: "main"),
+        .package(path: "../SwiftPrettyPrint"),
+//        .package(url: "https://github.com/HaiFengKao/SwiftPrettyPrint.git", .upToNextMajor(from: "1.2.0")),
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
     ],
@@ -14,9 +23,16 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .executableTarget(
             name: "XcodeprojToJson",
-            dependencies: []),
+            dependencies: ["XcodeProjKit", "Files", "ProjectAutomation", .product(name: "PackageDescription", package: "swift-package-manager"), "SwiftPrettyPrint"],
+
+            // magic from https://forums.swift.org/t/leveraging-availability-for-packagedescription-apis/18667
+            swiftSettings: [
+                .unsafeFlags(["-package-description-version", "999.0"]),
+            ]
+        ),
         .testTarget(
             name: "XcodeprojToJsonTests",
-            dependencies: ["XcodeprojToJson"]),
+            dependencies: ["XcodeprojToJson"]
+        ),
     ]
 )
