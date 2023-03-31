@@ -1,5 +1,5 @@
 //
-// Created by Lono on 2023/3/28.
+// Created by Hai Feng Kao on 2023/3/28.
 //
 
 import Foundation
@@ -62,19 +62,22 @@ extension String {
     }
 }
 
-extension ATarget {
-    var isSwiftPackage: Bool {
-        sources.first?.contains(spmCheckOutFolder) ?? false
-    }
-}
-
 extension TargetDependency {
-    var dtDependency: DTarget.Dependency {
+    var dtDependency: DTarget.Dependency? {
         switch self {
         case let .target(name):
+            // other targets
             return .target(name: name)
-        case let .project(name, path: _):
-            return .target(name: name)
+        case let .project(name, path: path):
+            if name == "SwiftRex" {
+                // Package.swift use product name
+                // but Tuist use target name as dependency
+                // so we need to monkey patch it
+                return nil
+            }
+
+            // swift packages
+            return .product(name: name, package: URL(filePath: path).lastPathComponent) // too hacky
         default:
             fatalError("not implemented: \(self)")
         }

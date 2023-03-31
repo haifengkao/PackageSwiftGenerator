@@ -39,6 +39,14 @@ struct UnicodeLogger: TextOutputStream {
     }
 }
 
+extension FileManager {
+    func directoryExistsAtPath(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = true
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        return exists && isDirectory.boolValue
+    }
+}
+
 extension Array where Element == URL {
     func commonFolder() -> URL? {
         guard let first = first else {
@@ -84,15 +92,20 @@ extension URL {
             .enumerated()
             .reduce(into: [String]()) { result, element in
                 let (index, path) = element
-                if otherPathComponents.count > index,
-                   otherPathComponents[index] == path
-                {
-                    result.append(path)
+                if otherPathComponents.count > index {
+                    if otherPathComponents[index] == path {
+                        result.append(path)
+                    }
                 }
             }
 
-        let relativePath: [String] = Array(pathComponents
-            .dropFirst(commonPath.count))
+        let relativePath: [String] =
+            otherPathComponents
+                .dropFirst(commonPath.count)
+                .map { _ in ".." }
+                +
+                Array(pathComponents
+                    .dropFirst(commonPath.count))
 
         return relativePath.joined(separator: "/")
     }
@@ -110,25 +123,30 @@ public struct PackageSwiftGenerator {
         let targets: [ATarget] = project.targets
         let libraryTargets: [DTarget] = targets
             .filter { target in
-                // exclude swift packages from github
-                !target.isSwiftPackage
-            }
-            .filter { target in
                 target.product == "staticFramework"
             }.map { (target: ATarget) -> DTarget in
 
-                let dependencies: [DTarget.Dependency] = target.dependencies.map(\.dtDependency)
+                let dependencies: [DTarget.Dependency] = target.dependencies.compactMap(\.dtDependency)
                 guard let path = target.sources.commonFolder(relativeTo: URL(fileURLWithPath: project.path)) else {
                     fatalError("no source folder for \(target.name) file:\(target.sources.first)")
                 }
 
+                let sourcePath = URL(fileURLWithPath: path)
                 return DTarget.target(name: target.name,
                                       dependencies: dependencies,
                                       path: path,
                                       resources: target.resources.map { path -> Resource in
                                           let url: URL = .init(filePath: path)
-                                          let relativePath: String = url.relative(to: projectRoot)
-                                          return Resource.process(relativePath)
+                                          let relativePath: String = url.relative(to: sourcePath)
+
+                                          if FileManager.default.directoryExistsAtPath(path)
+                                              || url.pathExtension == "xcassets"
+                                          {
+                                              // just copy the whole folder
+                                              return Resource.copy(relativePath)
+                                          } else {
+                                              return Resource.process(relativePath)
+                                          }
                                       })
             }
         return libraryTargets
@@ -136,15 +154,33 @@ public struct PackageSwiftGenerator {
 
     private func swiftPackages(_ project: Project) -> [DPackage.Dependency] {
         let targets = project.targets
-        let swiftPackages: [DPackage.Dependency] = targets.filter { target in
-            target.isSwiftPackage
+        // avoid duplicated paths
+        let packagePaths: Set<String> = Set(Set(targets.map { target in
+            target.dependencies
+        }.joined())
+            .compactMap { dependency in
+                switch dependency {
+                case let .project(target: _, path: path):
+
+                    if path.contains(spmCheckOutFolder) {
+                        return path
+                    }
+                case .target(name:):
+                    // ignore other non swift package targets
+                    break
+                default:
+                    print("unknown dependency: \(dependency)")
+                }
+
+                return nil
+            })
+        let projectRoot = URL(filePath: project.path)
+
+        let dep: [DPackage.Dependency] = packagePaths.map { path in
+            .package(path: path)
         }
-        .compactMap { target in
-            target.sources.first?.swiftPackageRootFolder
-        }.map {
-            .package(path: $0.path)
-        }
-        return swiftPackages
+
+        return dep
     }
 
     private func projectToPackage(_ project: Project) -> DPackage {
@@ -168,11 +204,11 @@ public struct PackageSwiftGenerator {
                 $0.0 != "path"
         }
 
-        if let dep = fields.filter { $0.0 == "dependencies" }.first {
+        if let dep = fields.filter({ $0.0 == "dependencies" }).first {
             rest.insert(dep, at: 1)
         }
 
-        if let dep = fields.filter { $0.0 == "path" }.first {
+        if let dep = fields.filter({ $0.0 == "path" }).first {
             rest.insert(dep, at: 2)
         }
 
@@ -189,10 +225,10 @@ public struct PackageSwiftGenerator {
                 $0.0 != "dependencies"
         }
 
-        if let dep = fields.filter { $0.0 == "products" }.first {
+        if let dep = fields.filter({ $0.0 == "products" }).first {
             rest.insert(dep, at: 2)
         }
-        if let dep = fields.filter { $0.0 == "dependencies" }.first {
+        if let dep = fields.filter({ $0.0 == "dependencies" }).first {
             rest.insert(dep, at: 3)
         }
 
@@ -224,7 +260,7 @@ public struct PackageSwiftGenerator {
 
         // .macOS("15.0"),
         let supportedPlatform = """
-        .iOS("13.0"),
+        .iOS("13.0"), .macOS("15.0")
         """
 
         // do {
@@ -233,7 +269,6 @@ public struct PackageSwiftGenerator {
 
         let graph = try Tuist.graph(at: tuistRoot)
 
-        let targets = graph.projects.values.flatMap(\.targets)
         guard let project = graph.projects.values.filter({ $0.name == projectName }).first else {
             print("no project found, available projects: \(graph.projects.values.map(\.name))")
             return
@@ -242,7 +277,7 @@ public struct PackageSwiftGenerator {
         let package = projectToPackage(project)
         var logger = UnicodeLogger()
 
-        SimpleDescriber.customEnumFilter = { target, _, originalString in
+        SimpleDescriber.customEnumFilter = { target, _, originalString -> String in
 
             if let dep = target as? DTarget.Dependency {
                 switch dep {
@@ -250,8 +285,12 @@ public struct PackageSwiftGenerator {
                     return "\"\(name)\""
                 case let .byNameItem(name, _):
                     return "\"\(name)\""
-                default:
-                    fatalError("not implemented \(target)")
+                case let .productItem(name: name, package: package, _, _):
+                    if let package = package {
+                        return ".product(name: \"\(name)\", package: \"\(package)\")"
+                    }
+                @unknown default:
+                    fatalError("unknown dependency: \(dep)")
                 }
             }
 
@@ -274,21 +313,44 @@ public struct PackageSwiftGenerator {
 
         SimpleDescriber.customObjectFilter = { target, _, original, fields in
 
-            if let platform = target as? SupportedPlatform {
+            if target is SupportedPlatform {
                 return supportedPlatform
             }
 
+            if case let dep = target as? DPackage.Dependency,
+               case let .fileSystem(_, path) = dep?.kind
+            {
+                return """
+                .package(path: "\(path)")
+                """
+            }
+
             let fields: Fields = fields
-            if let resource = target as? Resource {
-                if let path = fields.compactMap { tuple in
+            if target is Resource {
+                // workaround internal Resource var
+
+                let rule: String = fields.compactMap { tuple in
+                    if tuple.0 == "rule" {
+                        return tuple.1
+                    }
+                    return nil
+                }.first!
+
+                if let path = fields.compactMap({ tuple in
                     if tuple.0 == "path" {
                         return tuple.1
                     }
                     return nil
-                }.first {
-                    return """
-                     .process(\(path))
-                    """
+                }).first {
+                    if rule == "\"copy\"" {
+                        return """
+                         .copy(\(path))
+                        """
+                    } else {
+                        return """
+                         .process(\(path))
+                        """
+                    }
                 }
             }
 
@@ -310,7 +372,7 @@ public struct PackageSwiftGenerator {
         let data = logger.logged.data(using: .utf8)!
         let url = URL(fileURLWithPath: tuistRoot).appendingPathComponent("Package.swift")
         try! data.write(to: url)
-//        print(logger.logged)
+//        Pretty.prettyPrint(project)
     }
 }
 
