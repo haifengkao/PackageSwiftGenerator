@@ -35,16 +35,66 @@ struct UnicodeLogger: TextOutputStream {
             return
         }
 
-        // don't print nil properties
-        if line.contains(": nil") {
-            return
-        }
-
-        if line.contains("type: .regular,") {
-            return
-        }
-
         logged += line + "\n"
+    }
+}
+
+extension Array where Element == URL {
+    func commonFolder() -> URL? {
+        guard let first = first else {
+            return nil
+        }
+
+        let commonPath = first.pathComponents
+            .enumerated()
+            .reduce(into: [String]()) { result, element in
+                let (index, path) = element
+                if self.allSatisfy({ $0.pathComponents.count > index && $0.pathComponents[index] == path }) {
+                    result.append(path)
+                }
+            }
+
+        return commonPath.asFolderPath
+    }
+}
+
+extension Array where Element == String {
+    func commonFolder(relativeTo url: URL) -> String? {
+        let urls = compactMap { URL(fileURLWithPath: $0).deletingLastPathComponent() } // remove the filename to get the folder path
+        guard let common = urls.commonFolder() else { return nil }
+        return common.relative(to: url)
+    }
+
+    var asFolderPath: URL? {
+        guard let first = first else { return nil }
+
+        let url = URL(fileURLWithPath: first)
+        return dropFirst().reduce(url) { result, path in
+            result.appendingPathComponent(path)
+        }
+    }
+}
+
+extension URL {
+    func relative(to url: URL) -> String {
+        let pathComponents = self.pathComponents
+        let otherPathComponents = url.pathComponents
+
+        let commonPath = pathComponents
+            .enumerated()
+            .reduce(into: [String]()) { result, element in
+                let (index, path) = element
+                if otherPathComponents.count > index,
+                   otherPathComponents[index] == path
+                {
+                    result.append(path)
+                }
+            }
+
+        let relativePath: [String] = Array(pathComponents
+            .dropFirst(commonPath.count))
+
+        return relativePath.joined(separator: "/")
     }
 }
 
@@ -56,6 +106,7 @@ public struct PackageSwiftGenerator {
     }
 
     private func libraryTargets(_ project: Project) -> [DTarget] {
+        let projectRoot = URL(filePath: project.path)
         let targets: [ATarget] = project.targets
         let libraryTargets: [DTarget] = targets
             .filter { target in
@@ -67,11 +118,18 @@ public struct PackageSwiftGenerator {
             }.map { (target: ATarget) -> DTarget in
 
                 let dependencies: [DTarget.Dependency] = target.dependencies.map(\.dtDependency)
+                guard let path = target.sources.commonFolder(relativeTo: URL(fileURLWithPath: project.path)) else {
+                    fatalError("no source folder for \(target.name) file:\(target.sources.first)")
+                }
 
                 return DTarget.target(name: target.name,
                                       dependencies: dependencies,
-                                      sources: target.sources,
-                                      resources: target.resources.map(\.processResource))
+                                      path: path,
+                                      resources: target.resources.map { path -> Resource in
+                                          let url: URL = .init(filePath: path)
+                                          let relativePath: String = url.relative(to: projectRoot)
+                                          return Resource.process(relativePath)
+                                      })
             }
         return libraryTargets
     }
@@ -101,6 +159,45 @@ public struct PackageSwiftGenerator {
             dependencies: swiftPackages,
             targets: targets
         )
+    }
+
+    private func targetFieldsFilter(target _: DTarget, fields: Fields) -> Fields {
+        var rest: Fields = fields.filter {
+            $0.0 != "dependencies"
+                &&
+                $0.0 != "path"
+        }
+
+        if let dep = fields.filter { $0.0 == "dependencies" }.first {
+            rest.insert(dep, at: 1)
+        }
+
+        if let dep = fields.filter { $0.0 == "path" }.first {
+            rest.insert(dep, at: 2)
+        }
+
+        return rest
+            .filter { $0.1 != "[\n\n]" } // remove empty arrays
+            .filter { $0.1 != "nil" } // remove nil values
+            .filter { $0.1 != ".regular" } // remove "type: .regular"
+    }
+
+    private func packageFieldsFilter(package _: DPackage, fields: Fields) -> Fields {
+        var rest: Fields = fields.filter {
+            $0.0 != "products"
+                &&
+                $0.0 != "dependencies"
+        }
+
+        if let dep = fields.filter { $0.0 == "products" }.first {
+            rest.insert(dep, at: 2)
+        }
+        if let dep = fields.filter { $0.0 == "dependencies" }.first {
+            rest.insert(dep, at: 3)
+        }
+
+        return rest
+            .filter { $0.1 != "nil" } // remove nil values
     }
 
     public func run() throws {
@@ -161,6 +258,20 @@ public struct PackageSwiftGenerator {
             return originalString
         }
 
+        SimpleDescriber.customFieldsReorder = { target, fields in
+
+            var fields = fields
+            if let target = target as? DTarget {
+                fields = self.targetFieldsFilter(target: target, fields: fields)
+            }
+
+            if let package = target as? DPackage {
+                fields = self.packageFieldsFilter(package: package, fields: fields)
+            }
+
+            return fields
+        }
+
         SimpleDescriber.customObjectFilter = { target, _, original, fields in
 
             if let platform = target as? SupportedPlatform {
@@ -196,7 +307,10 @@ public struct PackageSwiftGenerator {
 
         Pretty.customizablePrettyPrint(package, to: &logger)
 
-        print(logger.logged)
+        let data = logger.logged.data(using: .utf8)!
+        let url = URL(fileURLWithPath: tuistRoot).appendingPathComponent("Package.swift")
+        try! data.write(to: url)
+//        print(logger.logged)
     }
 }
 

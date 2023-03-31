@@ -60,10 +60,6 @@ extension String {
         let url = URL(fileURLWithPath: self)
         return url.swiftPackageRootFolder
     }
-
-    var processResource: Resource {
-        .process(self)
-    }
 }
 
 extension ATarget {
