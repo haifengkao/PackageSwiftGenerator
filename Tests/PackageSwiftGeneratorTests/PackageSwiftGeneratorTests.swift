@@ -1,4 +1,4 @@
-@testable import XcodeprojToJson
+
 import XCTest
 
 final class PackageSwiftGeneratorTests: XCTestCase {
@@ -6,6 +6,6 @@ final class PackageSwiftGeneratorTests: XCTestCase {
         // This is an example of a functional test case.
         // Use XCTAssert and related functions to verify your tests produce the correct
         // results.
-        XCTAssertEqual(PackageSwiftGenerator().text, "Hello, World!")
+        XCTAssertEqual("", "Hello, World!")
     }
 }
