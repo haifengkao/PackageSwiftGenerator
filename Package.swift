@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "PackageSwiftGenerator",
     platforms: [
-        .macOS("12.0"),
+        .macOS("13.0"),
     ],
     products: [
         .executable(name: "tuist-generate-package-swift", targets: ["PackageSwiftGenerator"]),
@@ -32,7 +32,7 @@ let package = Package(
                 .unsafeFlags(["-package-description-version", "999.0"]),
             ],
             // need libPackageDescription.dylib from Xcode
-            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI/",])]
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI/"])]
         ),
         .testTarget(
             name: "PackageSwiftGeneratorTests",
