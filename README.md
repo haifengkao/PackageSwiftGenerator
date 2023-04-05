@@ -22,7 +22,7 @@ let config = Config(
 
 To start working on the project, you can follow the steps below:
 1. Clone the project.
-2. cd `fixtures/Example1`
+2. `cd fixtures/Example1`
 3. `tuist fetch` to install the plugin
-4. `tuist plugin run tuist-generate-package-swift` to run generate `Package.swift`
+4. `tuist plugin run tuist-generate-package-swift` to generate `Package.swift`
 5. `rm Package.swift` before re-run `tuist plugin run tuist-generate-package-swift` to avoid tuist-generate-package-swift not found error  
