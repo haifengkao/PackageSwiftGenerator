@@ -1,5 +1,7 @@
 # PackageSwiftGenerator
 Generate `Pacakge.swift` from [Tuist](https://github.com/tuist/tuist) configuration.
+## Prerequisite
+Please make sure Xcode is installed. PackageSwiftGenerator needs `libPackageDescription.dylib` in XcodeDefault.xctoolchain.
 
 ## Install
 
@@ -10,7 +12,7 @@ import ProjectDescription
 
 let config = Config(
     plugins: [
-        .git(url: "https://github.com/haifengkao/PackageSwiftGenerator", tag: "0.4.0")
+        .git(url: "https://github.com/haifengkao/PackageSwiftGenerator", tag: "0.5.0")
     ]
 )
 ```
