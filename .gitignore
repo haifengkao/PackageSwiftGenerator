@@ -9,3 +9,5 @@ DerivedData/
 .netrc
 Package.resolved
 fixtures/Example1/tuist-generate-package-swift
+fixtures/Example1/Package.swift
+PackageSwiftGenerator.tuist-plugin.zip

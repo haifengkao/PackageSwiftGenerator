@@ -3,6 +3,7 @@ import Foundation
 import PackageDescription
 import ProjectAutomation
 import SwiftPrettyPrint
+import ArgumentParser
 
 typealias DTarget = PackageDescription.Target
 typealias DPackage = PackageDescription.Package
@@ -20,7 +21,7 @@ struct UnicodeLogger: TextOutputStream {
 
     import PackageDescription
 
-    let package =
+    let package = 
     """
     var logged: String = Self.header
     mutating func write(_ string: String) {
@@ -110,16 +111,51 @@ extension URL {
         return relativePath.joined(separator: "/")
     }
 }
+struct GenerateCommand: ParsableCommand {
+    @Option(help: "tuist project path",  completion: .directory) var projectPath: String?
+    @Option(help: "project name") var projectName: String?
+
+
+    func run() {
+
+        do {
+            var projectPath = projectPath
+            var projectName = projectName
+            if projectPath == nil {
+                projectPath = fileManager.currentDirectoryPath
+            } else if projectPath!.hasPrefix("/") {
+                // absolute path
+            } else {
+                projectPath = fileManager.currentDirectoryPath + "/" + projectPath!
+            }
+
+            print("project root", projectPath)
+
+            if projectName == nil {
+                projectName = URL(fileURLWithPath: projectPath!).projectName
+            }
+
+            guard let projectName else {
+                print("no .xcodeproj file in \(projectPath)")
+                throw Error.missingProjectName
+            }
+
+            print("found project: \(projectName)")
+
+            let generator = PackageSwiftGenerator()
+            try generator.run(tuistRoot: projectPath!, projectName: projectName)
+
+        } catch {
+
+            print("Whoops! An error occurred: \(error)")
+        }
+
+    }
+}
 
 public struct PackageSwiftGenerator {
-    private let arguments: [String]
-
-    public init(arguments: [String] = CommandLine.arguments) {
-        self.arguments = arguments
-    }
 
     private func libraryTargets(_ project: Project) -> [DTarget] {
-        let projectRoot = URL(filePath: project.path)
         let targets: [ATarget] = project.targets
         let libraryTargets: [DTarget] = targets
             .filter { target in
@@ -165,7 +201,7 @@ public struct PackageSwiftGenerator {
                     if path.contains(spmCheckOutFolder) {
                         return path
                     }
-                case .target(name:):
+                case .target:
                     // ignore other non swift package targets
                     break
                 default:
@@ -174,7 +210,6 @@ public struct PackageSwiftGenerator {
 
                 return nil
             })
-        let projectRoot = URL(filePath: project.path)
 
         let dep: [DPackage.Dependency] = packagePaths.map { path in
             .package(path: path)
@@ -236,36 +271,12 @@ public struct PackageSwiftGenerator {
             .filter { $0.1 != "nil" } // remove nil values
     }
 
-    public func run() throws {
-        guard arguments.count > 1 else {
-            throw Error.missingFileName
-        }
-        // The first argument is the execution path
-        let tuistRoot = arguments[1]
-
-        var projectName: String?
-
-        if arguments.count > 2 {
-            projectName = arguments[2]
-        } else {
-            projectName = URL(fileURLWithPath: tuistRoot).projectName
-        }
-
-        guard let projectName else {
-            print("no .xcodeproj file in \(URL(fileURLWithPath: tuistRoot))")
-            throw Error.missingProjectName
-        }
-
-        print("found project: \(projectName)")
-
+    public func run(tuistRoot: String, projectName: String) throws {
         // .macOS("15.0"),
         let supportedPlatform = """
         .iOS("13.0"), .macOS("15.0")
         """
 
-        // do {
-        // try Folder.current.createFile(at: fileName)
-        print("project root", tuistRoot)
 
         let graph = try Tuist.graph(at: tuistRoot)
 
@@ -315,6 +326,13 @@ public struct PackageSwiftGenerator {
 
             if target is SupportedPlatform {
                 return supportedPlatform
+            }
+
+            if original.contains("_platforms:") {
+                // if we compile this plugin into binary file
+                // `_platforms:` will show up instead of `platforms:`
+                // I don't know why
+                return original.replacing("_platforms:", with: "platforms:")
             }
 
             if case let dep = target as? DPackage.Dependency,
@@ -372,15 +390,15 @@ public struct PackageSwiftGenerator {
         let data = logger.logged.data(using: .utf8)!
         let url = URL(fileURLWithPath: tuistRoot).appendingPathComponent("Package.swift")
         try! data.write(to: url)
+
+        print("Package.swift generated at \(url)")
 //        Pretty.prettyPrint(project)
     }
 }
 
 @available(macOS 13.0, *)
-public extension PackageSwiftGenerator {
-    enum Error: Swift.Error {
-        case missingFileName
-        case failedToCreateFile
-        case missingProjectName
-    }
+enum Error: Swift.Error {
+    case missingFileName
+    case failedToCreateFile
+    case missingProjectName
 }
