@@ -323,17 +323,6 @@ public struct PackageSwiftGenerator {
                 return supportedPlatform
             }
 
-            if original.contains("_platforms:") {
-                // if we compile this plugin into binary file
-                // `_platforms:` will show up instead of `platforms:`
-                // I don't know why
-                return original.replacing("_platforms:", with: "platforms:")
-            }
-            if original.contains("_resources:") {
-                // same as above
-                return original.replacing("_resources:", with: "resources:")
-            }
-
             if case let dep = target as? DPackage.Dependency,
                case let .fileSystem(_, path) = dep?.kind
             {
@@ -369,6 +358,18 @@ public struct PackageSwiftGenerator {
                         """
                     }
                 }
+            }
+
+            var original = original
+            if original.contains("_platforms:") {
+                // if we compile this plugin into binary file
+                // `_platforms:` will show up instead of `platforms:`
+                // I don't know why
+                original = original.replacing("_platforms:", with: "platforms:")
+            }
+            if original.contains("_resources:") {
+                // same as above
+                original = original.replacing("_resources:", with: "resources:")
             }
 
             var lines = original.split(separator: "\n")
