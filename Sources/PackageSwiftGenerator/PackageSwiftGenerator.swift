@@ -329,6 +329,10 @@ public struct PackageSwiftGenerator {
                 // I don't know why
                 return original.replacing("_platforms:", with: "platforms:")
             }
+            if original.contains("_resources:") {
+                // same as above
+                return original.replacing("_resources:", with: "resources:")
+            }
 
             if case let dep = target as? DPackage.Dependency,
                case let .fileSystem(_, path) = dep?.kind
