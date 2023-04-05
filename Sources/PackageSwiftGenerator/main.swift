@@ -1,4 +1,2 @@
 
 GenerateCommand.main()
-
-

@@ -26,12 +26,11 @@ let package = Package(
         .executableTarget(
             name: "PackageSwiftGenerator",
 
-                dependencies: ["Files",
-                               "ProjectAutomation",
-                               .product(name: "PackageDescription", package: "swift-package-manager"),
-                               "SwiftPrettyPrint",
-                               .product(name: "ArgumentParser", package: "swift-argument-parser")],
-
+            dependencies: ["Files",
+                           "ProjectAutomation",
+                           .product(name: "PackageDescription", package: "swift-package-manager"),
+                           "SwiftPrettyPrint",
+                           .product(name: "ArgumentParser", package: "swift-argument-parser")],
 
             // magic from https://forums.swift.org/t/leveraging-availability-for-packagedescription-apis/18667
             swiftSettings: [

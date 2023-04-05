@@ -1,9 +1,9 @@
+import ArgumentParser
 import Files
 import Foundation
 import PackageDescription
 import ProjectAutomation
 import SwiftPrettyPrint
-import ArgumentParser
 
 typealias DTarget = PackageDescription.Target
 typealias DPackage = PackageDescription.Package
@@ -111,13 +111,12 @@ extension URL {
         return relativePath.joined(separator: "/")
     }
 }
+
 struct GenerateCommand: ParsableCommand {
-    @Option(help: "tuist project path",  completion: .directory) var projectPath: String?
+    @Option(help: "tuist project path", completion: .directory) var projectPath: String?
     @Option(help: "project name") var projectName: String?
 
-
     func run() {
-
         do {
             var projectPath = projectPath
             var projectName = projectName
@@ -146,15 +145,12 @@ struct GenerateCommand: ParsableCommand {
             try generator.run(tuistRoot: projectPath!, projectName: projectName)
 
         } catch {
-
             print("Whoops! An error occurred: \(error)")
         }
-
     }
 }
 
 public struct PackageSwiftGenerator {
-
     private func libraryTargets(_ project: Project) -> [DTarget] {
         let targets: [ATarget] = project.targets
         let libraryTargets: [DTarget] = targets
@@ -276,7 +272,6 @@ public struct PackageSwiftGenerator {
         let supportedPlatform = """
         .iOS("13.0"), .macOS("15.0")
         """
-
 
         let graph = try Tuist.graph(at: tuistRoot)
 
