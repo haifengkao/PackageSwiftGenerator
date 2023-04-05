@@ -16,7 +16,7 @@ let config = Config(
 ```
 3. run `tuist fetch` in terminal to download `PackageSwiftGenerator`
 
-4. run `tuist generate-package-swift`
+4. run `tuist generate-package-swift` to generate `Package.swift`
 
 ## Contribute
 
