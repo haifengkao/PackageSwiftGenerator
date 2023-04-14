@@ -12,7 +12,7 @@ import ProjectDescription
 
 let config = Config(
     plugins: [
-        .git(url: "https://github.com/haifengkao/PackageSwiftGenerator", tag: "0.7.0")
+        .git(url: "https://github.com/haifengkao/PackageSwiftGenerator", tag: "0.8.0")
     ]
 )
 ```
@@ -27,4 +27,4 @@ To start working on the project, you can follow the steps below:
 2. `cd fixtures/Example1`
 3. `tuist fetch` to install the plugin
 4. `tuist plugin run tuist-generate-package-swift` to generate `Package.swift`
-5. `rm Package.swift` before re-run `tuist plugin run tuist-generate-package-swift` to avoid tuist-generate-package-swift not found error  
+5. `rm Package.swift` before re-run `tuist plugin run tuist-generate-package-swift` to avoid tuist-generate-package-swift not found error
