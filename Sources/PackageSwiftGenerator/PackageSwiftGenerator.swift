@@ -154,9 +154,7 @@ public struct PackageSwiftGenerator {
     private func libraryTargets(_ project: Project) -> [DTarget] {
         let targets: [ATarget] = project.targets
         let libraryTargets: [DTarget] = targets
-            .filter { target in
-                target.product == "staticFramework"
-            }.map { (target: ATarget) -> DTarget in
+            .compactMap { (target: ATarget) -> DTarget? in
 
                 let dependencies: [DTarget.Dependency] = target.dependencies.compactMap(\.dtDependency)
                 guard let path = target.sources.commonFolder(relativeTo: URL(fileURLWithPath: project.path)) else {
@@ -164,22 +162,40 @@ public struct PackageSwiftGenerator {
                 }
 
                 let sourcePath = URL(fileURLWithPath: path)
-                return DTarget.target(name: target.name,
-                                      dependencies: dependencies,
-                                      path: path,
-                                      resources: target.resources.map { path -> Resource in
-                                          let url: URL = .init(filePath: path)
-                                          let relativePath: String = url.relative(to: sourcePath)
+                func resource(path: String) -> Resource {
+                    let url: URL = .init(filePath: path)
+                    let relativePath: String = url.relative(to: sourcePath)
 
-                                          if FileManager.default.directoryExistsAtPath(path)
-                                              || url.pathExtension == "xcassets"
-                                          {
-                                              // just copy the whole folder
-                                              return Resource.copy(relativePath)
-                                          } else {
-                                              return Resource.process(relativePath)
-                                          }
-                                      })
+                    if FileManager.default.directoryExistsAtPath(path)
+                        || url.pathExtension == "xcassets"
+                    {
+                        // just copy the whole folder
+                        return Resource.copy(relativePath)
+                    } else {
+                        return Resource.process(relativePath)
+                    }
+                }
+
+                switch target.product {
+                case "staticFramework":
+                    return DTarget.target(name: target.name,
+                                          dependencies: dependencies,
+                                          path: path,
+                                          resources: target.resources.map(resource(path:)))
+                case "app":
+                    return DTarget.target(name: target.name,
+                                          dependencies: dependencies,
+                                          path: path,
+                                          resources: target.resources.map(resource(path:)))
+                case "unit_tests":
+                    return DTarget.testTarget(name: target.name,
+                                              dependencies: dependencies,
+                                              path: path,
+                                              resources: target.resources.map(resource(path:)))
+                default:
+                    print("unsupported: \(target.name) with product type:\(target.product)")
+                    return nil
+                }
             }
         return libraryTargets
     }
@@ -229,6 +245,7 @@ public struct PackageSwiftGenerator {
     }
 
     private func targetFieldsFilter(target _: DTarget, fields: Fields) -> Fields {
+        // reorder "dependencies" and "path" properties
         var rest: Fields = fields.filter {
             $0.0 != "dependencies"
                 &&
@@ -247,9 +264,12 @@ public struct PackageSwiftGenerator {
             .filter { $0.1 != "[\n\n]" } // remove empty arrays
             .filter { $0.1 != "nil" } // remove nil values
             .filter { $0.1 != ".regular" } // remove "type: .regular"
+            .filter { $0.1 != ".test" } // remove "type: .test"
+            .filter { $0.1 != ".package" } // remove "group: .package"
     }
 
     private func packageFieldsFilter(package _: DPackage, fields: Fields) -> Fields {
+        // reorder "products" and "dependencies" properties
         var rest: Fields = fields.filter {
             $0.0 != "products"
                 &&
@@ -373,9 +393,16 @@ public struct PackageSwiftGenerator {
             }
 
             var lines = original.split(separator: "\n")
+
             // monkey patch
             if lines.first == "Target(" {
-                lines[0] = ".target("
+                if let target = target as? DTarget {
+                    if target.isTest {
+                        lines[0] = ".testTarget("
+                    } else {
+                        lines[0] = ".target("
+                    }
+                }
             }
 
             return lines.joined(separator: "\n")
