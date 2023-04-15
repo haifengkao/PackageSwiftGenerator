@@ -12,7 +12,7 @@ import ProjectDescription
 
 let config = Config(
     plugins: [
-        .git(url: "https://github.com/haifengkao/PackageSwiftGenerator", tag: "0.8.0")
+        .git(url: "https://github.com/haifengkao/PackageSwiftGenerator", tag: "0.10.0")
     ]
 )
 ```
