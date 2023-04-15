@@ -117,8 +117,32 @@ extension Array where Element == String {
 
 /// we need to use sources property if the sources files are separated in different folders
 struct PathSourcesItem {
-    let path: String
-    let sources: [String]
+    let path: String?
+    let sources: [String]?
+}
+
+extension ATarget {
+    /// returns true if the target has sources in "Derived/Sources" folder
+    func sourcesInDerivedFolder(projectPath: URL) -> [String] {
+        let derivedSourcesFolder = projectPath.appendingPathComponent("Derived").appendingPathComponent("Sources")
+        let allFiles = fileManager.enumerator(atPath: derivedSourcesFolder.path)?.allObjects as? [String] ?? []
+        let sources = allFiles.filter { $0.hasSuffix("+\(name).swift") }
+        return sources.map { derivedSourcesFolder.appendingPathComponent($0).path }
+    }
+}
+
+func getPathSourcesItem(_ projectPath: URL, _ target: ATarget) -> PathSourcesItem {
+    let sourcesInDerivedFolder = target.sourcesInDerivedFolder(projectPath: projectPath)
+    if sourcesInDerivedFolder.isEmpty {
+        let commonPath = target.sources.commonFolder(relativeTo: projectPath)
+        return PathSourcesItem(path: commonPath, sources: nil)
+    } else {
+        let allSources = target.sources + sourcesInDerivedFolder
+        return PathSourcesItem(path: nil, sources: allSources.map {
+            let url = URL(fileURLWithPath: $0)
+            return url.relative(to: projectPath)
+        })
+    }
 }
 
 extension URL {
@@ -151,6 +175,10 @@ extension URL {
 
 public struct PackageSwiftGenerator {
     private func libraryTargets(_ project: Project) -> [DTarget] {
+        func pathSourcesItem(_ target: ATarget) -> PathSourcesItem {
+            getPathSourcesItem(URL(fileURLWithPath: project.path), target)
+        }
+
         let targets: [ATarget] = project.targets
         let libraryTargets: [DTarget] = targets
             .compactMap { (target: ATarget) -> DTarget? in
@@ -159,6 +187,8 @@ public struct PackageSwiftGenerator {
                 guard let path = target.sources.commonFolder(relativeTo: URL(fileURLWithPath: project.path)) else {
                     fatalError("no source folder for \(target.name) file:\(target.sources.first)")
                 }
+
+                let pathSourcesItem: PathSourcesItem = pathSourcesItem(target)
 
                 let sourcePath = URL(fileURLWithPath: path)
                 func resource(path: String) -> Resource {
@@ -179,17 +209,20 @@ public struct PackageSwiftGenerator {
                 case "staticFramework":
                     return DTarget.target(name: target.name,
                                           dependencies: dependencies,
-                                          path: path,
+                                          path: pathSourcesItem.path,
+                                          sources: pathSourcesItem.sources,
                                           resources: target.resources.map(resource(path:)))
                 case "app":
                     return DTarget.target(name: target.name,
                                           dependencies: dependencies,
-                                          path: path,
+                                          path: pathSourcesItem.path,
+                                          sources: pathSourcesItem.sources,
                                           resources: target.resources.map(resource(path:)))
                 case "unit_tests":
                     return DTarget.testTarget(name: target.name,
                                               dependencies: dependencies,
                                               path: path,
+                                              sources: pathSourcesItem.sources,
                                               resources: target.resources.map(resource(path:)))
                 default:
                     print("unsupported: \(target.name) with product type:\(target.product)")
