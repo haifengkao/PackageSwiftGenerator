@@ -14,29 +14,60 @@ let fileManager = FileManager.default
 let spmCheckOutFolder = ".build/checkouts"
 let spmBuildFolder = ".build"
 
-struct UnicodeLogger: TextOutputStream {
-    static let header = """
-    // swift-tools-version: 5.7
-    // The swift-tools-version declares the minimum version of Swift required to build this package.
+extension DPackage {
+    func filterTargets(byNames targetNames: [String]) -> DPackage {
+        let dict = Dictionary(uniqueKeysWithValues: targets.map { ($0.name, $0) })
+        let filteredTargetNames = dict.dependencyNames(of: targetNames)
 
-    import PackageDescription
+        return DPackage(
+            name: name,
+            platforms: platforms,
+            products: products,
+            dependencies: dependencies.filter {
+                guard let name = $0.name else {
+                    if case let .fileSystem(_, path) = $0.kind {
+                        return filteredTargetNames.contains(URL(filePath: path).lastPathComponent)
+                    }
+                    return true
+                }
+                return filteredTargetNames.contains(name)
+            },
+            targets: targets.filter { filteredTargetNames.contains($0.name) }
+        )
+    }
+}
 
-    let package = 
-    """
-    var logged: String = Self.header
-    mutating func write(_ string: String) {
-        let lines = string.split(separator: "\n")
-        for line in lines {
-            handleLine(String(line))
+extension Dictionary where Key == String, Value == DTarget {
+    func dependencyNames(of targetNames: [String]) -> Set<String> {
+        var visited = Set<String>()
+        for name in targetNames {
+            DFS(name, &visited)
         }
+
+        return visited
     }
 
-    mutating func handleLine(_ line: String) {
-        guard !line.isEmpty, line != "\n" else {
+    func DFS(_ name: String, _ visited: inout Set<String>) {
+        if visited.contains(name) {
             return
         }
-
-        logged += line + "\n"
+        visited.insert(name)
+        guard let target = self[name] else {
+            return
+        }
+        for dependency in target.dependencies {
+            switch dependency {
+            case let .productItem(name, packageName, _, _):
+                DFS(name, &visited)
+                if let packageName = packageName {
+                    DFS(packageName, &visited)
+                }
+            case let .targetItem(name, _):
+                DFS(name, &visited)
+            case let .byNameItem(name, _):
+                DFS(name, &visited)
+            }
+        }
     }
 }
 
@@ -84,6 +115,12 @@ extension Array where Element == String {
     }
 }
 
+/// we need to use sources property if the sources files are separated in different folders
+struct PathSourcesItem {
+    let path: String
+    let sources: [String]
+}
+
 extension URL {
     func relative(to url: URL) -> String {
         let pathComponents = self.pathComponents
@@ -109,44 +146,6 @@ extension URL {
                     .dropFirst(commonPath.count))
 
         return relativePath.joined(separator: "/")
-    }
-}
-
-struct GenerateCommand: ParsableCommand {
-    @Option(help: "tuist project path", completion: .directory) var projectPath: String?
-    @Option(help: "project name") var projectName: String?
-
-    func run() {
-        do {
-            var projectPath = projectPath
-            var projectName = projectName
-            if projectPath == nil {
-                projectPath = fileManager.currentDirectoryPath
-            } else if projectPath!.hasPrefix("/") {
-                // absolute path
-            } else {
-                projectPath = fileManager.currentDirectoryPath + "/" + projectPath!
-            }
-
-            print("project root", projectPath)
-
-            if projectName == nil {
-                projectName = URL(fileURLWithPath: projectPath!).projectName
-            }
-
-            guard let projectName else {
-                print("no .xcodeproj file in \(projectPath)")
-                throw Error.missingProjectName
-            }
-
-            print("found project: \(projectName)")
-
-            let generator = PackageSwiftGenerator()
-            try generator.run(tuistRoot: projectPath!, projectName: projectName)
-
-        } catch {
-            print("Whoops! An error occurred: \(error)")
-        }
     }
 }
 
@@ -287,7 +286,7 @@ public struct PackageSwiftGenerator {
             .filter { $0.1 != "nil" } // remove nil values
     }
 
-    public func run(tuistRoot: String, projectName: String) throws {
+    public func run(tuistRoot: String, projectName: String, targetNames: [String]) throws {
         // .macOS("15.0"),
         let supportedPlatform = """
         .iOS("13.0"), .macOS("15.0")
@@ -300,7 +299,11 @@ public struct PackageSwiftGenerator {
             return
         }
 
-        let package = projectToPackage(project)
+        var package = projectToPackage(project)
+        if !targetNames.isEmpty {
+            package = package.filterTargets(byNames: targetNames)
+        }
+
         var logger = UnicodeLogger()
 
         SimpleDescriber.customEnumFilter = { target, _, originalString -> String in
