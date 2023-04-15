@@ -131,18 +131,66 @@ extension ATarget {
     }
 }
 
+extension FileManager {
+    func overwriteCopyItem(at srcURL: URL, to dstURL: URL) throws {
+        if fileExists(atPath: dstURL.path) {
+            try removeItem(at: dstURL)
+        }
+        try copyItem(at: srcURL, to: dstURL)
+    }
+}
+
 func getPathSourcesItem(_ projectPath: URL, _ target: ATarget) -> PathSourcesItem {
     let sourcesInDerivedFolder = target.sourcesInDerivedFolder(projectPath: projectPath)
-    if sourcesInDerivedFolder.isEmpty {
-        let commonPath = target.sources.commonFolder(relativeTo: projectPath)
-        return PathSourcesItem(path: commonPath, sources: nil)
-    } else {
-        let allSources = target.sources + sourcesInDerivedFolder
-        return PathSourcesItem(path: nil, sources: allSources.map {
-            let url = URL(fileURLWithPath: $0)
-            return url.relative(to: projectPath)
-        })
+    guard let commonPath = target.sources.commonFolder(relativeTo: projectPath) else {
+        fatalError("no source folder for \(target.name) file:\(target.sources.first)")
     }
+
+    if sourcesInDerivedFolder.isEmpty {
+        return PathSourcesItem(path: commonPath, sources: nil)
+    }
+    // very hacky which only works in my own project
+    // copy the derived sources to a "<TargetName>/Derived" folder
+    let magicStringSources = "/Sources/\(target.name)"
+    let magicStringTests = "/Tests/\(target.name)"
+    if !commonPath.contains(magicStringSources),
+       !commonPath.contains(magicStringTests)
+    {
+        fatalError("TODO: \(target.name) has sources in Derived folder which is not supported\n\(sourcesInDerivedFolder)")
+    }
+
+    let magicString = commonPath.contains(magicStringSources) ? magicStringSources : magicStringTests
+    let tempDerivedSourcesFolderPath = commonPath.replacingOccurrences(of: magicString, with: "/Derived")
+
+    if !fileManager.directoryExistsAtPath(tempDerivedSourcesFolderPath) {
+        do {
+            try fileManager.createDirectory(atPath: tempDerivedSourcesFolderPath, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            fatalError("failed to create folder: \(tempDerivedSourcesFolderPath)")
+        }
+    }
+
+    var copiedDerivedSources: [String] = []
+    for filename in sourcesInDerivedFolder {
+        let url = URL(fileURLWithPath: filename)
+        let destination = URL(fileURLWithPath: tempDerivedSourcesFolderPath).appendingPathComponent(url.lastPathComponent)
+        do {
+            try fileManager.overwriteCopyItem(at: url, to: destination)
+        } catch {
+            fatalError("failed to copy file from \(url) to \(destination)")
+        }
+
+        copiedDerivedSources.append(destination.path)
+    }
+
+    let allSources = target.sources + copiedDerivedSources
+    let updatedCommonPath = allSources.commonFolder(relativeTo: projectPath)!
+    let absoluteCommonPath = projectPath.appendingPathComponent(updatedCommonPath)
+    return PathSourcesItem(path: updatedCommonPath,
+                           sources: allSources.map {
+                               let url = URL(fileURLWithPath: $0)
+                               return url.relative(to: absoluteCommonPath)
+                           })
 }
 
 extension URL {
